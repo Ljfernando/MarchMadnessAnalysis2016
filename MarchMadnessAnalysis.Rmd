@@ -1,0 +1,229 @@
+---
+title: "Case Study: March Madness"
+author: "Lance Fernando, Sahil Jain, Zoe Weinberg, Kelsey Weise, Ien Whang"
+date: "3/7/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Loading libraries and data
+library(ggplot2)
+setwd("/Users/lancefernando/Desktop/USFSpring2017/BSDS100/CaseStudy/MarchMadness")
+load("March_Madness.RData")
+```
+
+##Data Preprocessing
+First we attempt to minimize our datasets into a data frame we can work with. The code to do so is below.
+```{r createFrame}
+
+#Creating feature containing each games score difference
+RegularSeasonCompactResults$WscoreDif <- RegularSeasonCompactResults$Wscore - RegularSeasonCompactResults$Lscore
+
+#Converting Season from char to factor in order to properly create tables and access levels.
+RegularSeasonCompactResults$Season <- factor(RegularSeasonCompactResults$Season)
+
+
+#Creating empty dataframe
+newFrame <- data.frame(Season = NA,
+                       Var1 = NA,
+                       Freq = NA,
+                       AvgScoreDiff = NA,
+                       W_home_perc = NA,
+                       W_away_perc = NA,
+                       W_neut_perc = NA)
+
+
+#Loops once for each season (2006-2016) for a total of 10 times
+for(i in levels(RegularSeasonCompactResults$Season)){
+  
+  #Accessing all data from the i'th season
+  eachSeason <- RegularSeasonCompactResults[RegularSeasonCompactResults$Season == i,]
+  
+  #Creating aggregated dataframe which includes the number of wins for each team
+  eachSeasonFrame <- as.data.frame(table(eachSeason$Wteam))
+  
+  #Creating empty columns for new data frame
+  teamWinScoreDif <- rep(0, nrow(eachSeasonFrame))
+  percHomeWin <- rep(0, nrow(eachSeasonFrame))
+  percAwayWin <- rep(0, nrow(eachSeasonFrame))
+  percNeutWin <- rep(0, nrow(eachSeasonFrame))
+  
+  #Inputting data for new columns
+  #This loop looks at each team person season
+  for(j in 1:nrow(eachSeasonFrame)){
+    
+    currTeam <- eachSeasonFrame$Var1[j]
+    
+    #Calculating cumulative score difference the team won by and setting value in column vector
+    totalWinBy <- sum(eachSeason$WscoreDif[eachSeason$Wteam == currTeam])
+    teamWinScoreDif[j] <- totalWinBy
+    
+    #Calculating total num of wins based on location
+    totalHomeWin <- length(which(eachSeason$Wloc == "H" &
+                                   eachSeason$Wteam == currTeam))
+    totalAwayWin <- length(which(eachSeason$Wloc == "A" &
+                                   eachSeason$Wteam == currTeam))
+    totalNeuWin <- length(which(eachSeason$Wloc == "N" &
+                                  eachSeason$Wteam == currTeam))
+    
+    #Adding value to respective column vectors
+    percHomeWin[j] <- totalHomeWin
+    percAwayWin[j] <- totalAwayWin
+    percNeutWin[j] <- totalNeuWin
+  }
+  
+  #Calculating percentages and averages
+  avgDif <- teamWinScoreDif/eachSeasonFrame$Freq
+  percHomeWin <- percHomeWin/eachSeasonFrame$Freq
+  percAwayWin <- percAwayWin/eachSeasonFrame$Freq
+  percNeutWin <- percNeutWin/eachSeasonFrame$Freq
+  
+  #Binding all column vectors to the individual season dataframe
+  eachSeasonFrame <- data.frame(Season = rep(i, nrow(eachSeasonFrame)),
+                                eachSeasonFrame,
+                                AvgScoreDiff = avgDif,
+                                W_home_perc = percHomeWin,
+                                W_away_perc = percAwayWin,
+                                W_neut_perc = percNeutWin)
+                                
+  
+  #Binding individual season dataframe rows to new frame
+  newFrame <- rbind(newFrame, eachSeasonFrame)
+}
+
+#Removing first row with NA values
+newFrame <- newFrame[-1,]
+
+names(newFrame) <- c("Season",
+                     "Team",
+                     "numWins",
+                     "AvgWinByScore",
+                     "W_home_perc",
+                     "W_away_perc",
+                     "W_neut_perc")
+
+#Adding team names
+for(i in 1:nrow(newFrame)){
+  newFrame$TeamName[i] <- as.character(Teams$Team_Name[which(Teams$Team_Id == as.integer(newFrame$Team[i]))])
+}
+```
+
+
+This is what we end up with!
+```{r previewNewFrame}
+head(newFrame)
+```
+
+
+
+***
+##Data Exploration/Visualization
+
+
+With our new data frame **newFrame** we try to pick out variables that may have an effect on a given team's chances of winning or going far in the championship. With this, we look specifically at the 2016 March Madness bracket and pull out the best(*seed 1*) and worst(*seed16*) teams competing.
+
+The code below removes the region from the **Seed** column in order to access just the seed number itself. We then grab the top and bottom teams of the bracket.
+```{r}
+newSeed <- as.character(TourneySeeds$Seed)
+for(i in 1:length(newSeed)){
+  newSeed[i] = substr(newSeed[i], 2, 3)
+}
+TourneySeeds$Seed <- as.numeric(newSeed)
+
+
+topTeams <- TourneySeeds$Team[which(TourneySeeds$Seed == 1 & TourneySeeds$Season == 2016)]
+botTeams <- TourneySeeds$Team[which(TourneySeeds$Seed == 16 & TourneySeeds$Season == 2016)]
+```
+
+
+***
+####Plot1
+Our first plot is a histogram that analyzes the teams pulled from the 2016 bracket and their respective average winning score difference for all games won from 2006-2016. With this, we can compare the density of the *best* teams and *worst* teams of the 2016 bracket.
+```{r plot1}
+par(mfrow = c(1,2))
+hist(newFrame$AvgWinByScore[which(newFrame$Team %in% botTeams)], prob = TRUE, breaks = 8, main = "Bottom Teams(Seed16)", xlab = "AvgScoreDifference")
+lines(density(newFrame$AvgWinByScore[which(newFrame$Team %in% botTeams)]), col = "firebrick", lwd = 2)
+
+hist(newFrame$AvgWinByScore[which(newFrame$Team %in% topTeams)], prob = TRUE, breaks = 8, main = "Top Teams(Seed1)", xlab = "AvgScoreDifference")
+lines(density(newFrame$AvgWinByScore[which(newFrame$Team %in% topTeams)]), col = "steelblue", lwd = 2)
+```
+
+
+Here are the respective summary statistics for the top and bottom teams plotted above. Notice the large difference between the two sets of values where top teams are much higher.
+```{r sumstats1}
+summary(newFrame$AvgWinByScore[which(newFrame$Team %in% botTeams)])
+summary(newFrame$AvgWinByScore[which(newFrame$Team %in% topTeams)])
+```
+
+
+***
+####Plot2
+The next set of histograms is similar to the ones above but looks at the percentage of home wins as opposed to the average winning score difference.
+```{r plot2}
+par(mfrow = (c(1,2)))
+hist(newFrame$W_home_perc[which(newFrame$Team %in% botTeams)], prob = TRUE, breaks = 10, main = "Bottom Teams(Seed16)", xlab = "Home Win Percentage")
+lines(density(newFrame$W_home_perc[which(newFrame$Team %in% botTeams)]), col = "firebrick", lwd = 2)
+
+hist(newFrame$W_home_perc[which(newFrame$Team %in% topTeams)], prob = TRUE, breaks = 10, main = "Top Teams(Seed1)", xlab = "Home Win Percentage")
+lines(density(newFrame$W_home_perc[which(newFrame$Team %in% topTeams)]), col = "steelblue", lwd = 2)
+```
+
+```{r sumStats2}
+summary(newFrame$W_home_perc[which(newFrame$Team %in% topTeams)])
+
+summary(newFrame$W_home_perc[which(newFrame$Team %in% botTeams)])
+```
+
+Here are the respective summary statistics for the above plots. Again, notice the higher numbers for top teams and low teams. 
+
+With this we can conclude that the percentage of home games won as well as the average winning score difference are variables that can help predict the winning teams in the March Madness Bracket.
+
+
+***
+####Plot3&4
+We then analyzed the frequency of the number of wins the top teams had as well as the bottom teams. 
+```{r plot3}
+#Plotting Seed1 2016 Teams
+#The funky as.factor(as.numeric...) stuff is to just show the 10s place of the year for graphing purposes
+ggplot(data = newFrame[which(newFrame$Team %in% topTeams),], aes(x = as.factor(as.numeric(Season)- 2000), y = numWins, fill = AvgWinByScore)) +
+  geom_bar(stat = "identity") + facet_wrap(~TeamName) + labs(title = "Win Frequency of Seed 1 Teams in 2016 Bracket (2006-2016)", x = "Season Year")
+
+#Plotting Seed16 2016 Teams
+ggplot(data = newFrame[which(newFrame$Team %in% botTeams),], aes(x = as.factor(as.numeric(Season) - 2000), y = numWins, fill = AvgWinByScore)) +
+  geom_bar(stat = "identity") + facet_wrap(~TeamName) + labs(title = "Win Frequency of Seed 16 Teams in 2016 Bracket (2006-2016)", x = "Season Year")
+
+```
+
+***
+####Plot5
+This visualization analyzes the two teams that were in the finals during last year's March Madness which are UNC and Villanova. We explore the frequency of season wins excluding the tournament as well as the team's average winning score difference for each season.
+```{r plot5}
+ggplot(data = newFrame[newFrame$Team == 1437 | newFrame$Team == 1314,], aes(x = Season, y = numWins, fill = TeamName)) +
+  geom_bar(stat = "identity", position = "dodge", mapping = aes(alpha = AvgWinByScore)) +
+  labs(title = "UNC vs Villanova Season Wins Frequency (2006-2016)")
+```
+
+
+
+***
+####Plot6
+This next visualization does the same thing but instead looks at the percentage of home games won instead of the average winning score difference for each season.
+```{r plot6}
+ggplot(data = newFrame[newFrame$Team == 1437 | newFrame$Team == 1314,], aes(x = Season, y = numWins, fill = TeamName)) +
+  geom_bar(stat = "identity", position = "dodge", mapping = aes(alpha = W_home_perc)) +
+  labs(title = "UNC vs Villanova Season Wins Frequency (2006-2016)")
+```
+
+
+***
+####Interesting Finding
+The teams with the highest amount of wins and highest average scoring difference are both from Kentucky. Since Kentucky has a majority of Evangelical Protestants, we conclude that **God** can play a huge role in NCAA basketball.
+```{r}
+newFrame$TeamName[which.max(newFrame$numWins)]
+newFrame$TeamName[which.max(newFrame$AvgWinByScore)]
+```
+
